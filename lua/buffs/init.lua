@@ -1,8 +1,8 @@
-local utils = require("utils");
+local utils = require("buffs.utils");
 -- local BUFFERS = {}
 
 local function get_buffers(type)
-	assert(type == "file" or type == "non-file", string.format("Invalid type: %s. Valid values: ['file', 'non-file']"), type);
+	assert(type == "file" or type == "non-file", string.format("Invalid type: %s. Valid values: ['file', 'non-file']", type));
 
 	local buffers = vim.fn.getbufinfo({ buflisted = 1 });
 	local filtered = {};
@@ -93,18 +93,19 @@ local function list_buffers()
 		return;
 	end
 
-	print(string.format("%-5s %-5s %-50s %s", "Index", "Id", "Name", "Status"));
 
+	local cwd = vim.fn.getcwd();
+	print(string.format("%-5s %-5s %-50s %s", "Index", "Id", "Name", "Status"));
 	for i, buf in ipairs(buffers) do
 		local buf_num = buf.bufnr;
-		local buf_name = buf.name;
+		local buf_name = utils.remove_matching_chars(cwd, buf.name);
 		local buf_status = buf.changed == 1 and "Modified" or "Unmodified";
 
 		print(string.format("%-5d %-5d %-50s %s", i, buf_num, buf_name, buf_status));
 	end
 end
 
-vim.api.nvim_create_user_command("BufList", list_buffers, {});
+vim.api.nvim_create_user_command("List", list_buffers, {});
 
 -- ####################
 -- OPEN
@@ -131,7 +132,7 @@ local function open_buffer(index)
 	-- BUFFERS = buffers;
 end
 
-vim.api.nvim_create_user_command("BufOpen", function(opts)
+vim.api.nvim_create_user_command("Open", function(opts)
 	open_buffer(opts.args);
 end, {nargs = 1});
 
@@ -176,7 +177,7 @@ end, {nargs = 1});
 -- 	BUFFERS[indexes[1]] = temp_buf;
 -- end
 -- 
--- vim.api.nvim_create_user_command("BufSwap", function(opts)
+-- vim.api.nvim_create_user_command("Swap", function(opts)
 -- 	swap_buffers(opts.args);
 -- end, {nargs = "+"});
 
@@ -193,7 +194,7 @@ local function delete_buffer_by_index(args)
  	local buffers = get_buffers("file");
 	-- no buffers
 	if utils.array_size(buffers) == 0 then
-		print("No buffers available.");
+		print("No buffers exist.");
 		return;
 	end
 
@@ -230,30 +231,35 @@ local function delete_buffer_by_index(args)
 	-- BUFFERS = get_buffers("file");
 end
 
-vim.api.nvim_create_user_command("BufDelete", function(opts)
+vim.api.nvim_create_user_command("Delete", function(opts)
 	delete_buffer_by_index(opts.args);
 end, {nargs = "+"});
 
-local function delete_non_file_buffers()
-	local buffers = get_non_file_buffers();
+local function wipe_non_file_buffers()
+	local buffers = get_buffers("non-file");
+	local ids = "";
 	for _, buf in ipairs(buffers) do
-		print(buf.name);
+		ids = ids .. string.format("%d ", buf.bufnr);
+	end
+	if ids ~= "" then
+		vim.cmd(string.format("bwipeout %s", ids));
+	else
+		print("No non-file buffers exist.");
 	end
 end
 
-vim.api.nvim_create_user_command("BufDeleteNonFile", function()
-	delete_non_file_buffers();
+vim.api.nvim_create_user_command("Wipe", function()
+	wipe_non_file_buffers();
 end, {});
 
 local function print_table_keys(tbl)
 	for k, v in pairs(tbl) do
-		print(k);
-		print(v);
+		print(k .. " - " .. " " .. v);
 		print();
 	end
 end
 
-local function print_all_buffers(buffers)
+local function print_buffers(buffers)
 	-- Get a list of all listed buffers
 
 	-- Check if there are any buffers
@@ -276,5 +282,3 @@ local function print_all_buffers(buffers)
 		print_table_keys(buf);
 	end
 end
-
-print("!!!!!!!!!!!!!!!!!!!!!!!!");
