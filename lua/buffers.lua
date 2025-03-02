@@ -1,37 +1,19 @@
-function dict_size(tbl)
-	local i = 0;
-	for k, v in pairs(tbl) do
-		i = i + 1;
-	end
-
-	return i;
-end
-
-function array_size(tbl)
-	local i = 0;
-	for k, v in ipairs(tbl) do
-		i = i + 1;
-	end
-	return i;
-end
-
-local function string_to_number_table(str)
-	local numbers = {}
-	for num in string.gmatch(str, "%S+") do
-		table.insert(numbers, tonumber(num))
-	end
-	
-	return numbers
-end
-
+local utils = require("utils");
 -- local BUFFERS = {}
 
-function get_file_buffers()
+local function get_buffers(type)
+	assert(type == "file" or type == "non-file", string.format("Invalid type: %s. Valid values: ['file', 'non-file']"), type);
+
 	local buffers = vim.fn.getbufinfo({ buflisted = 1 });
 	local filtered = {};
 	local idx = 1;
 	for _, buf in ipairs(buffers) do
-		if buf.name ~= "" then
+		if type == "file" and buf.name ~= "" then
+			filtered[idx] = buf;
+			idx = idx + 1;
+		end
+
+		if type == "non-file" and buf.name == "" then
 			filtered[idx] = buf;
 			idx = idx + 1;
 		end
@@ -40,23 +22,9 @@ function get_file_buffers()
 	return filtered;
 end
 
-function get_non_file_buffers()
-	local buffers = vim.fn.getbufinfo({});
-	local filtered = {};
-	local idx = 1;
-	for _, buf in ipairs(buffers) do
-		if buf.name ~= "" then
-			filtered[idx] = buf;
-			idx = idx + 1;
-		end
-	end
-
-	return filtered;
-end
-
-function duplicate_buffer(arg_buf) 
-	local BUFFERS = vim.fn.getbufinfo({ buflisted = 1 });
-	for _, saved_buf in ipairs(BUFFERS) do
+local function duplicate_buffer(arg_buf) 
+	local buffers = get_buffers("file");
+	for _, saved_buf in ipairs(buffers) do
 		if saved_buf.name == arg_buf.name then
 			return true;
 		end
@@ -69,9 +37,9 @@ end
 -- SYNC
 -- ####################
 -- function sync_buffers()
--- 	local buffers = get_file_buffers();
--- 	print("Init Buffers " .. array_size(buffers));
--- 	if array_size(buffers) == 0 then
+-- 	local buffers = get_buffers("file");
+-- 	print("Init Buffers " .. utils.array_size(buffers));
+-- 	if utils.array_size(buffers) == 0 then
 -- 		print("No buffers available.");
 -- 		return;
 -- 	end
@@ -119,8 +87,8 @@ end
 -- LIST
 -- ####################
 local function list_buffers()
- 	local buffers = get_file_buffers();
-	if array_size(buffers) == 0 then
+ 	local buffers = get_buffers("file");
+	if utils.array_size(buffers) == 0 then
 		print("No buffers available.");
 		return;
 	end
@@ -142,19 +110,19 @@ vim.api.nvim_create_user_command("BufList", list_buffers, {});
 -- OPEN
 -- ####################
 local function open_buffer(index)
- 	local buffers = get_file_buffers();
+ 	local buffers = get_buffers("file");
 	local idx = tonumber(index);
 
 	-- no buffers
-	if array_size(buffers) == 0 then
+	if utils.array_size(buffers) == 0 then
 		print("No buffers available.");
 		-- BUFFERS = {};
 		return;
 	end
 
 	-- idx out of range
-	if idx < 1 or idx > array_size(buffers) then
-		print(idx .. " out of range [" .. 1 .. ", " .. array_size(buffers) .. "]");
+	if idx < 1 or idx > utils.array_size(buffers) then
+		print(idx .. " out of range [" .. 1 .. ", " .. utils.array_size(buffers) .. "]");
 		return;
 	end
 
@@ -178,27 +146,27 @@ end, {nargs = 1});
 -- 	-- end
 -- 
 -- 	-- no buffers
--- 	if array_size(BUFFERS) == 0 then
+-- 	if utils.array_size(BUFFERS) == 0 then
 -- 		print("No buffers available.");
 -- 		return;
 -- 	end
 -- 
--- 	local indexes = string_to_number_table(args);
+-- 	local indexes = utils.string_to_number_table(args);
 -- 
 -- 	-- idx out of range
 -- 	local invalid = {};
 -- 	for i, n in ipairs(indexes) do
 -- 		print("==> " .. n);
--- 		if n < 1 or n > array_size(BUFFERS) then
+-- 		if n < 1 or n > utils.array_size(BUFFERS) then
 -- 			invalid[i] = n;
 -- 		end
 -- 	end
 -- 
--- 	print("--> " .. array_size(invalid));
+-- 	print("--> " .. utils.array_size(invalid));
 -- 	-- print out of range args
--- 	if array_size(invalid) > 0 then
+-- 	if utils.array_size(invalid) > 0 then
 -- 		local str_invalid = table.concat(indexes, " ");
--- 		print(str_invalid .. " out of range [" .. 1 .. ", " .. array_size(BUFFERS) .. "]");
+-- 		print(str_invalid .. " out of range [" .. 1 .. ", " .. utils.array_size(BUFFERS) .. "]");
 -- 		return;
 -- 	end
 -- 
@@ -222,27 +190,27 @@ local function delete_buffer_by_index(args)
 	--   return;
 	-- end
 
- 	local buffers = get_file_buffers();
+ 	local buffers = get_buffers("file");
 	-- no buffers
-	if array_size(buffers) == 0 then
+	if utils.array_size(buffers) == 0 then
 		print("No buffers available.");
 		return;
 	end
 
-	local indexes = string_to_number_table(args);
+	local indexes = utils.string_to_number_table(args);
 
 	-- idx out of range
 	local invalid = {};
 	for i, idx in ipairs(indexes) do
-		if idx < 1 or idx > array_size(buffers) then
+		if idx < 1 or idx > utils.array_size(buffers) then
 			invalid[i] = idx;
 		end
 	end
 
 	-- print out of range args
-	if array_size(invalid) > 0 then
+	if utils.array_size(invalid) > 0 then
 		local str_invalid = table.concat(indexes, " ");
-		print(str_invalid .. " out of range [" .. 1 .. ", " .. array_size(buffers) .. "]");
+		print(str_invalid .. " out of range [" .. 1 .. ", " .. utils.array_size(buffers) .. "]");
 		return;
 	end
 
@@ -259,7 +227,7 @@ local function delete_buffer_by_index(args)
 	if err then
 		vim.notify("Failed to delete buffers " .. err);
 	end
-	-- BUFFERS = get_file_buffers();
+	-- BUFFERS = get_buffers("file");
 end
 
 vim.api.nvim_create_user_command("BufDelete", function(opts)
@@ -277,7 +245,7 @@ vim.api.nvim_create_user_command("BufDeleteNonFile", function()
 	delete_non_file_buffers();
 end, {});
 
-function print_table_keys(tbl)
+local function print_table_keys(tbl)
 	for k, v in pairs(tbl) do
 		print(k);
 		print(v);
@@ -285,13 +253,11 @@ function print_table_keys(tbl)
 	end
 end
 
-
-function print_all_buffers()
+local function print_all_buffers(buffers)
 	-- Get a list of all listed buffers
-	local buffers = vim.fn.getbufinfo({ buflisted = 1 }) -- Only listed buffers
 
 	-- Check if there are any buffers
-	if array_size(buffers) == 0 then
+	if utils.array_size(buffers) == 0 then
 		print("No buffers available.")
 		return
 	end
