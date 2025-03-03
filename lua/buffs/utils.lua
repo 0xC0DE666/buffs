@@ -1,23 +1,43 @@
-local M = {};
+local M = {}
 
-M.dict_size = function(tbl)
-	local i = 0;
-	for k, v in pairs(tbl) do
-		i = i + 1;
-	end
+M.regex = {
+	number_range = "^%d+-%d+$",
+	space_numbers = "^%d+[ %d+]*$",
+}
 
-	return i;
+local function is_array(t)
+    if type(t) ~= "table" then
+        return false
+    end
+
+    local count = 0
+    for k, v in ipairs(t) do
+        if k ~= count + 1 then
+            return false  -- Found a non-consecutive key
+        end
+        count = count + 1
+    end
+
+    return count > 0  -- Return true if there are elements
 end
 
-M.array_size = function(tbl)
-	local i = 0;
-	for k, v in ipairs(tbl) do
-		i = i + 1;
+M.table_size = function(tbl)
+	local i = 0
+	local fn = is_array(tbl) and ipairs or pairs
+	for k, v in fn(tbl) do
+		i = i + 1
 	end
-	return i;
+
+	return i
 end
 
 M.string_to_number_table = function(str)
+	local invalid = string.match(str, M.regex.space_numbers) == nil
+	if invalid then
+		local err = string.format("Invalid argument: \'%s\'", str);
+		error(err)
+    end
+
 	local numbers = {}
 	for num in string.gmatch(str, "%S+") do
 		table.insert(numbers, tonumber(num))
@@ -27,18 +47,12 @@ M.string_to_number_table = function(str)
 end
 
 M.remove_matching_chars = function(a, b)
-	local idx = 1;
-	while idx <= #a and idx <= #b do
-		local char_a = a:sub(idx, 1);
-		local char_b = b:sub(idx, 1);
-		if char_a ~= char_b then
-			break;
-		end
-		idx = idx + 1;
-	end
-
-	local last = (#b - idx) * -1;
-	return b:sub(last);
+	local regex = string.format("[^%s]", a)
+	local iter = string.gmatch(b, regex)
+	local v = iter()
+	print(v)
+	print(iter())
+	return v
 end
 
-return M;
+return M
