@@ -1,18 +1,28 @@
 local U = require("buffs.utils")
 
-local function get_buffers(type)
-	assert(type == "named" or type == "unamed", string.format("Invalid type: %s. Valid values: ['named', 'unamed']", type))
+local NAMED_BUFFERS = "named"
+local UNNAMED_BUFFERS = "unamed"
 
-	local buffs = vim.fn.getbufinfo({ buflisted = 1 })
+local function get_buffers(type)
+	local default = type == nil or type == ""
+	if not default then
+		assert(type == NAMED_BUFFERS or type == UNNAMED_BUFFERS, string.format("Invalid type: '%s'. ['%s', '%s']", type, NAMED_BUFFERS, UNNAMED_BUFFERS))
+	end
+	type = default and NAMED_BUFFERS or type
+
+	local bufs =
+		type == NAMED_BUFFERS and vim.fn.getbufinfo({ buflisted = 1 })
+		or vim.fn.getbufinfo({ buflisted = 0, scratch = 1 })
+
 	local filtered = {}
 	local idx = 1
-	for _, buf in ipairs(buffs) do
-		if type == "named" and buf.name ~= "" then
+	for _, buf in ipairs(bufs) do
+		if type == NAMED_BUFFERS and buf.name ~= "" then
 			filtered[idx] = buf
 			idx = idx + 1
 		end
 
-		if type == "unamed" and buf.name == "" then
+		if type == UNNAMED_BUFFERS and buf.name == "" then
 			filtered[idx] = buf
 			idx = idx + 1
 		end
@@ -24,9 +34,9 @@ end
 -- ####################
 -- LIST
 -- ####################
-local function list_buffers()
- 	local buffs = get_buffers("named")
-	if U.table_size(buffs) == 0 then
+local function list_buffers(type)
+ 	local bufs = get_buffers(type)
+	if U.table_size(bufs) == 0 then
 		print("No buffers exist.")
 		return
 	end
@@ -34,7 +44,7 @@ local function list_buffers()
 
 	local cwd = vim.fn.getcwd()
 	print(string.format("%-5s %-5s %-50s %s", "Idx", "Id", "Name", "Status"))
-	for i, buf in ipairs(buffs) do
+	for i, buf in ipairs(bufs) do
 		local buf_name = buf.name:gsub(cwd..'/', "")
 		local buf_status = buf.changed == 1 and "Modified" or "Unmodified"
 
@@ -42,29 +52,31 @@ local function list_buffers()
 	end
 end
 
-vim.api.nvim_create_user_command("List", list_buffers, {})
+vim.api.nvim_create_user_command("List", function(opts)
+	list_buffers(opts.args)
+end, { nargs = "*" })
 
 -- ####################
 -- OPEN
 -- ####################
 local function open_buffer(index)
- 	local buffs = get_buffers("named")
+ 	local bufs = get_buffers()
 	local idx = tonumber(index)
 
 	-- no buffers
-	if U.table_size(buffs) == 0 then
+	if U.table_size(bufs) == 0 then
 		print("No buffers exist.")
 		return
 	end
 
 	-- idx out of range
-	if idx < 1 or idx > U.table_size(buffs) then
-		print(idx .. " out of range [" .. 1 .. ", " .. U.table_size(buffs) .. "]")
+	if not U.in_range(idx, 1, U.table_size(bufs)) then
+		print(idx .. " out of range [" .. 1 .. ", " .. U.table_size(bufs) .. "]")
 		return
 	end
 
 	-- open buffer
-	vim.cmd("buffer " .. buffs[idx].bufnr)
+	vim.cmd("buffer " .. bufs[idx].bufnr)
 end
 
 vim.api.nvim_create_user_command("Open", function(opts)
@@ -116,44 +128,48 @@ end, {nargs = 1})
 -- 	swap_buffers(opts.args)
 -- end, {nargs = "+"})
 
+local RANGE = "range"
+local SPACE_NUMBERS = "indexes"
+local INVALID = "invalid"
+
 -- ####################
 -- DELETE
 -- ####################
 local function delete_buffers(args)
 	local type = 
-		(U.is_range(args) and "range")
-    	or (U.is_space_numbers(args) and "indexes")
-    	or "invalid"
+		(U.is_range(args) and RANGE)
+    	or (U.is_space_numbers(args) and SPACE_NUMBERS)
+    	or INVALID
 
 	-- invalid args
-	if type == "invalid" then
+	if type == INVALID then
 	  print(string.format("Invalid argument: '%s'", args))
 	  return
 	end
 
- 	local buffs = get_buffers("named")
-	local buffs_len = U.table_size(buffs)
+ 	local bufs = get_buffers()
+	local bufs_len = U.table_size(bufs)
 
 	-- no buffers
-	if buffs_len == 0 then
+	if bufs_len == 0 then
 		print("No buffers exist.")
 		return
 	end
 
-	if type == "range" then 
+	if type == RANGE then 
 		local bounds = U.split(args, '-')
 		local low = tonumber(bounds[1])
 		local up = tonumber(bounds[2])
-		local out_of_range = not U.in_range(low, 1, buffs_len) or not U.in_range(up, 1, buffs_len)
+		local out_of_range = not U.in_range(low, 1, bufs_len) or not U.in_range(up, 1, bufs_len)
 		if out_of_range then
-			print(string.format("%s out of range [%d, %d]", args, 1, buffs_len))
+			print(string.format("%s out of range [%d, %d]", args, 1, bufs_len))
 			return
 		end
 
 		local idxs = U.range_to_array(args)
 		local ids = ""
 		for _, i in ipairs(idxs) do
-			ids = string.format("%s %d", ids, buffs[i].bufnr)
+			ids = string.format("%s %d", ids, bufs[i].bufnr)
 		end
 
 		local _, err = pcall(function()
@@ -169,17 +185,17 @@ local function delete_buffers(args)
 	local idxs = U.space_numbers_to_array(args)
 
 	-- indexes out of range
-	local invalid = U.get_out_of_range(idxs, 1, buffs_len)
+	local invalid = U.get_out_of_range(idxs, 1, bufs_len)
 	if invalid and U.table_size(invalid) > 0 then
 		local str_invalid = table.concat(invalid, " ")
-		print(string.format("%s out of range [%d, %d]", str_invalid, 1, buffs_len))
+		print(string.format("%s out of range [%d, %d]", str_invalid, 1, bufs_len))
 		return
 	end
 
 	-- delete buffers
 	local ids = ""
 	for _, i in ipairs(idxs) do
-		ids = string.format("%s %d", ids, buffs[i].bufnr)
+		ids = string.format("%s %d", ids, bufs[i].bufnr)
 	end
 
 	local _, err = pcall(function()
@@ -195,44 +211,64 @@ vim.api.nvim_create_user_command("Delete", function(opts)
 	delete_buffers(opts.args)
 end, {nargs = "+"})
 
+local DEFAULT = "default"
+
 -- ####################
 -- WIPEOUT
 -- ####################
 local function wipeout_buffers(args)
-	local type = 
-		(U.is_range(args) and "range")
-    	or (U.is_space_numbers(args) and "indexes")
-    	or "invalid"
+	local default = args == nil or args == ""
+	local type =
+		(U.is_range(args) and RANGE)
+    	or (U.is_space_numbers(args) and SPACE_NUMBERS)
+    	or DEFAULT
 
 	-- invalid args
-	if type == "invalid" then
-	  print(string.format("Invalid argument: '%s'", args))
-	  return
-	end
+	--if type == INVALID then
+	--  print(string.format("Invalid argument: '%s'", args))
+	--  return
+	--end
 
- 	local buffs = get_buffers("named")
-	local buffs_len = U.table_size(buffs)
+	local buf_type = type == DEFAULT and UNNAMED_BUFFERS or NAMED_BUFFERS
+ 	local bufs = get_buffers(buf_type)
+	local bufs_len = U.table_size(bufs)
 
 	-- no buffers
-	if buffs_len == 0 then
+	if bufs_len == 0 then
 		print("No buffers exist.")
 		return
 	end
 
-	if type == "range" then 
+	if type == DEFAULT then
+		local ids = ""
+		for _, buf in ipairs(bufs) do
+			ids = string.format("%s %d", ids, buf.bufnr)
+		end
+
+		local _, err = pcall(function()
+			vim.cmd("bwipeout! " .. ids)
+		end)
+
+		if err then
+			vim.notify("Failed to wipeout buffers " .. err)
+		end
+		return
+	end
+
+	if type == RANGE then
 		local bounds = U.split(args, '-')
 		local low = tonumber(bounds[1])
 		local up = tonumber(bounds[2])
-		local out_of_range = not U.in_range(low, 1, buffs_len) or not U.in_range(up, 1, buffs_len)
+		local out_of_range = not U.in_range(low, 1, bufs_len) or not U.in_range(up, 1, bufs_len)
 		if out_of_range then
-			print(string.format("%s out of range [%d, %d]", args, 1, buffs_len))
+			print(string.format("%s out of range [%d, %d]", args, 1, bufs_len))
 			return
 		end
 
 		local idxs = U.range_to_array(args)
 		local ids = ""
 		for _, i in ipairs(idxs) do
-			ids = string.format("%s %d", ids, buffs[i].bufnr)
+			ids = string.format("%s %d", ids, bufs[i].bufnr)
 		end
 
 		local _, err = pcall(function()
@@ -246,19 +282,19 @@ local function wipeout_buffers(args)
 	end
 
 	local idxs = U.space_numbers_to_array(args)
+	local invalid = U.get_out_of_range(idxs, 1, bufs_len)
 
 	-- indexes out of range
-	local invalid = U.get_out_of_range(idxs, 1, buffs_len)
 	if invalid and U.table_size(invalid) > 0 then
 		local str_invalid = table.concat(invalid, " ")
-		print(string.format("%s out of range [%d, %d]", str_invalid, 1, buffs_len))
+		print(string.format("%s out of range [%d, %d]", str_invalid, 1, bufs_len))
 		return
 	end
 
 	-- wipeout buffers
 	local ids = ""
 	for _, i in ipairs(idxs) do
-		ids = string.format("%s %d", ids, buffs[i].bufnr)
+		ids = string.format("%s %d", ids, bufs[i].bufnr)
 	end
 
 	local _, err = pcall(function()
@@ -272,13 +308,13 @@ end
 
 vim.api.nvim_create_user_command("Wipeout", function(opts)
 	wipeout_buffers(opts.args)
-end, {nargs = "+"})
+end, {nargs = "*"})
 
-local function print_buffers(buffs)
+local function print_buffers(bufs)
 	-- Get a list of all listed buffers
 
 	-- Check if there are any buffers
-	if U.table_size(buffs) == 0 then
+	if U.table_size(bufs) == 0 then
 		print("No buffers exist.")
 		return
 	end
@@ -287,7 +323,7 @@ local function print_buffers(buffs)
 	print(string.format("%-5s %-30s %s", "Num", "Name", "Status"))
 
 	-- Iterate through the buffers and print their details
-	for _, buf in ipairs(buffs) do
+	for _, buf in ipairs(bufs) do
 		local buf_num = buf.bufnr
 		local buf_name = buf.name
 		local buf_status = buf.changed == 1 and "Modified" or "Unmodified"
